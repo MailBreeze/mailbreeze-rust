@@ -127,9 +127,13 @@ pub struct Contact {
     pub first_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
     pub status: ContactStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_fields: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
@@ -152,7 +156,11 @@ pub struct CreateContactParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_fields: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consent_type: Option<ConsentType>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -172,6 +180,8 @@ pub struct UpdateContactParams {
     pub first_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_number: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_fields: Option<HashMap<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
