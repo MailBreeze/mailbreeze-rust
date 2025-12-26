@@ -109,6 +109,15 @@ pub enum ContactStatus {
     Suppressed,
 }
 
+/// Consent type for NDPR compliance
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsentType {
+    Explicit,
+    Implicit,
+    LegitimateInterest,
+}
+
 /// Contact object
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
@@ -124,6 +133,14 @@ pub struct Contact {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_type: Option<ConsentType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_ip_address: Option<String>,
 }
 
 /// Parameters for creating a contact
@@ -136,6 +153,14 @@ pub struct CreateContactParams {
     pub last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_fields: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_type: Option<ConsentType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_ip_address: Option<String>,
 }
 
 /// Parameters for updating a contact
@@ -149,6 +174,14 @@ pub struct UpdateContactParams {
     pub last_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_fields: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_type: Option<ConsentType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_ip_address: Option<String>,
 }
 
 /// Parameters for listing contacts
