@@ -1,59 +1,94 @@
 use crate::client::HttpClient;
 use crate::error::Result;
 use crate::types::{
-    Contact, ContactList, CreateContactParams, ListContactsParams, SubscriptionResult,
-    UpdateContactParams,
+    Contact, ContactsResponse, CreateContactParams, ListContactsParams, SuppressParams,
+    SuppressReason, UpdateContactParams,
 };
 
-/// Contacts API resource
+/// Contacts API resource - scoped to a specific contact list
+///
+/// All contact operations are performed within the context of a specific list.
+/// Get a contacts instance by calling `client.contacts(list_id)`.
+///
+/// # Example
+/// ```rust,no_run
+/// use mailbreeze::MailBreeze;
+///
+/// #[tokio::main]
+/// async fn main() -> mailbreeze::Result<()> {
+///     let client = MailBreeze::new("your_api_key")?;
+///
+///     // Get contacts for a specific list
+///     let contacts = client.contacts("list_123");
+///
+///     // Create a contact in this list
+///     let contact = contacts.create(&mailbreeze::CreateContactParams {
+///         email: "user@example.com".to_string(),
+///         first_name: Some("John".to_string()),
+///         ..Default::default()
+///     }).await?;
+///
+///     // List contacts in this list
+///     let list = contacts.list(&Default::default()).await?;
+///
+///     Ok(())
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct Contacts {
     client: HttpClient,
+    list_id: String,
 }
 
 impl Contacts {
-    pub fn new(client: HttpClient) -> Self {
-        Self { client }
+    pub fn new(client: HttpClient, list_id: impl Into<String>) -> Self {
+        Self {
+            client,
+            list_id: list_id.into(),
+        }
     }
 
-    /// Create a new contact
+    /// Build the path for contact operations within this list
+    fn path(&self, suffix: &str) -> String {
+        format!("/contact-lists/{}/contacts{}", self.list_id, suffix)
+    }
+
+    /// Create a new contact in the list
     pub async fn create(&self, params: &CreateContactParams) -> Result<Contact> {
-        self.client.post("/contacts", params).await
+        self.client.post(&self.path(""), params).await
     }
 
     /// Get a contact by ID
     pub async fn get(&self, id: &str) -> Result<Contact> {
-        self.client.get(&format!("/contacts/{}", id)).await
+        self.client.get(&self.path(&format!("/{}", id))).await
     }
 
     /// Update a contact
     pub async fn update(&self, id: &str, params: &UpdateContactParams) -> Result<Contact> {
         self.client
-            .patch(&format!("/contacts/{}", id), params)
+            .put(&self.path(&format!("/{}", id)), params)
             .await
     }
 
     /// Delete a contact
     pub async fn delete(&self, id: &str) -> Result<()> {
-        self.client.delete(&format!("/contacts/{}", id)).await
+        self.client.delete(&self.path(&format!("/{}", id))).await
     }
 
-    /// List contacts with optional filters
-    pub async fn list(&self, params: &ListContactsParams) -> Result<ContactList> {
-        self.client.get_with_params("/contacts", params).await
+    /// List contacts in the list with optional filters
+    pub async fn list(&self, params: &ListContactsParams) -> Result<ContactsResponse> {
+        self.client.get_with_params(&self.path(""), params).await
     }
 
-    /// Unsubscribe a contact
-    pub async fn unsubscribe(&self, id: &str) -> Result<SubscriptionResult> {
+    /// Suppress a contact
+    ///
+    /// Suppressed contacts will not receive any emails.
+    /// This is different from unsubscribing - suppression is
+    /// typically used for bounces, complaints, or manual removal.
+    pub async fn suppress(&self, id: &str, reason: SuppressReason) -> Result<()> {
+        let params = SuppressParams { reason };
         self.client
-            .post_empty(&format!("/contacts/{}/unsubscribe", id))
-            .await
-    }
-
-    /// Resubscribe a contact
-    pub async fn resubscribe(&self, id: &str) -> Result<SubscriptionResult> {
-        self.client
-            .post_empty(&format!("/contacts/{}/resubscribe", id))
+            .post_no_response(&self.path(&format!("/{}/suppress", id)), &params)
             .await
     }
 }
@@ -70,7 +105,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let config = ClientConfig::new("test_key").base_url(mock_server.uri());
         let client = HttpClient::new(config).unwrap();
-        let contacts = Contacts::new(client);
+        let contacts = Contacts::new(client, "list_123");
         (mock_server, contacts)
     }
 
@@ -79,14 +114,19 @@ mod tests {
         let (mock_server, contacts) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/contacts"))
+            .and(path("/api/v1/contact-lists/list_123/contacts"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "id": "contact_123",
-                "email": "john@example.com",
-                "first_name": "John",
-                "last_name": "Doe",
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "id": "contact_123",
+                    "email": "john@example.com",
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "status": "active",
+                    "source": "api",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "updatedAt": "2024-01-01T00:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -108,12 +148,17 @@ mod tests {
         let (mock_server, contacts) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/contacts/contact_123"))
+            .and(path("/api/v1/contact-lists/list_123/contacts/contact_123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "contact_123",
-                "email": "john@example.com",
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "id": "contact_123",
+                    "email": "john@example.com",
+                    "status": "active",
+                    "source": "api",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "updatedAt": "2024-01-01T00:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -126,15 +171,19 @@ mod tests {
     async fn test_update_contact() {
         let (mock_server, contacts) = setup().await;
 
-        Mock::given(method("PATCH"))
-            .and(path("/contacts/contact_123"))
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/contact-lists/list_123/contacts/contact_123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "contact_123",
-                "email": "john@example.com",
-                "first_name": "Johnny",
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-02T00:00:00Z"
+                "success": true,
+                "data": {
+                    "id": "contact_123",
+                    "email": "john@example.com",
+                    "firstName": "Johnny",
+                    "status": "active",
+                    "source": "api",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "updatedAt": "2024-01-02T00:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -153,7 +202,7 @@ mod tests {
         let (mock_server, contacts) = setup().await;
 
         Mock::given(method("DELETE"))
-            .and(path("/contacts/contact_123"))
+            .and(path("/api/v1/contact-lists/list_123/contacts/contact_123"))
             .respond_with(ResponseTemplate::new(204))
             .mount(&mock_server)
             .await;
@@ -166,52 +215,39 @@ mod tests {
         let (mock_server, contacts) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/contacts"))
+            .and(path("/api/v1/contact-lists/list_123/contacts"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "items": [
-                    {"id": "contact_1", "email": "a@example.com", "status": "active", "created_at": "2024-01-01T00:00:00Z"},
-                    {"id": "contact_2", "email": "b@example.com", "status": "active", "created_at": "2024-01-01T00:00:00Z"}
-                ],
-                "meta": {"page": 1, "limit": 10, "total": 2, "total_pages": 1}
+                "success": true,
+                "data": {
+                    "contacts": [
+                        {"id": "contact_1", "email": "a@example.com", "status": "active", "source": "api", "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-01T00:00:00Z"},
+                        {"id": "contact_2", "email": "b@example.com", "status": "active", "source": "api", "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-01T00:00:00Z"}
+                    ],
+                    "pagination": {"page": 1, "limit": 10, "total": 2, "totalPages": 1, "hasNext": false, "hasPrev": false}
+                }
             })))
             .mount(&mock_server)
             .await;
 
         let result = contacts.list(&ListContactsParams::default()).await.unwrap();
-        assert_eq!(result.items.len(), 2);
+        assert_eq!(result.contacts.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_unsubscribe_contact() {
+    async fn test_suppress_contact() {
         let (mock_server, contacts) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/contacts/contact_123/unsubscribe"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "contact_123",
-                "status": "unsubscribed"
-            })))
+            .and(path(
+                "/api/v1/contact-lists/list_123/contacts/contact_123/suppress",
+            ))
+            .respond_with(ResponseTemplate::new(204))
             .mount(&mock_server)
             .await;
 
-        let result = contacts.unsubscribe("contact_123").await.unwrap();
-        assert_eq!(result.status, ContactStatus::Unsubscribed);
-    }
-
-    #[tokio::test]
-    async fn test_resubscribe_contact() {
-        let (mock_server, contacts) = setup().await;
-
-        Mock::given(method("POST"))
-            .and(path("/contacts/contact_123/resubscribe"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "contact_123",
-                "status": "active"
-            })))
-            .mount(&mock_server)
-            .await;
-
-        let result = contacts.resubscribe("contact_123").await.unwrap();
-        assert_eq!(result.status, ContactStatus::Active);
+        contacts
+            .suppress("contact_123", SuppressReason::Manual)
+            .await
+            .unwrap();
     }
 }

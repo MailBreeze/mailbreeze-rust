@@ -11,7 +11,8 @@
 //! async fn main() -> mailbreeze::Result<()> {
 //!     let client = MailBreeze::new("your_api_key")?;
 //!
-//!     let email = client.emails.send(&SendEmailParams {
+//!     // Send an email
+//!     let result = client.emails.send(&SendEmailParams {
 //!         from: "sender@yourdomain.com".to_string(),
 //!         to: vec!["recipient@example.com".to_string()],
 //!         subject: Some("Hello from MailBreeze!".to_string()),
@@ -19,7 +20,12 @@
 //!         ..Default::default()
 //!     }).await?;
 //!
-//!     println!("Email sent with ID: {}", email.id);
+//!     println!("Email sent with message ID: {}", result.message_id);
+//!
+//!     // Work with contacts in a specific list
+//!     let contacts = client.contacts("list_xxx");
+//!     let contact_list = contacts.list(&Default::default()).await?;
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -41,14 +47,14 @@ use std::time::Duration;
 pub struct MailBreeze {
     /// Emails API resource
     pub emails: Emails,
-    /// Contacts API resource
-    pub contacts: Contacts,
     /// Lists API resource
     pub lists: Lists,
     /// Verification API resource
     pub verification: Verification,
     /// Attachments API resource
     pub attachments: Attachments,
+    /// HTTP client for creating list-scoped resources
+    http_client: HttpClient,
 }
 
 impl MailBreeze {
@@ -63,11 +69,45 @@ impl MailBreeze {
 
         Ok(Self {
             emails: Emails::new(http_client.clone()),
-            contacts: Contacts::new(http_client.clone()),
             lists: Lists::new(http_client.clone()),
             verification: Verification::new(http_client.clone()),
-            attachments: Attachments::new(http_client),
+            attachments: Attachments::new(http_client.clone()),
+            http_client,
         })
+    }
+
+    /// Get a contacts resource for a specific list
+    ///
+    /// All contact operations are performed within the context of a specific list.
+    ///
+    /// # Arguments
+    /// * `list_id` - The ID of the contact list
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use mailbreeze::MailBreeze;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> mailbreeze::Result<()> {
+    ///     let client = MailBreeze::new("your_api_key")?;
+    ///
+    ///     // Get contacts for a specific list
+    ///     let contacts = client.contacts("list_123");
+    ///
+    ///     // Create a contact in this list
+    ///     let contact = contacts.create(&mailbreeze::CreateContactParams {
+    ///         email: "user@example.com".to_string(),
+    ///         ..Default::default()
+    ///     }).await?;
+    ///
+    ///     // List contacts in this list
+    ///     let list = contacts.list(&Default::default()).await?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn contacts(&self, list_id: impl Into<String>) -> Contacts {
+        Contacts::new(self.http_client.clone(), list_id)
     }
 
     /// Create a builder for configuring the client
@@ -141,14 +181,12 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/emails"))
+            .and(path("/api/v1/emails"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "id": "email_123",
-                "from": "sender@example.com",
-                "to": ["recipient@example.com"],
-                "subject": "Hello",
-                "status": "queued",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "messageId": "msg_123abc"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -166,7 +204,35 @@ mod tests {
             ..Default::default()
         };
 
-        let email = client.emails.send(&params).await.unwrap();
-        assert_eq!(email.id, "email_123");
+        let result = client.emails.send(&params).await.unwrap();
+        assert_eq!(result.message_id, "msg_123abc");
+    }
+
+    #[tokio::test]
+    async fn test_contacts_method() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/v1/contact-lists/list_123/contacts"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "success": true,
+                "data": {
+                    "contacts": [
+                        {"id": "contact_1", "email": "a@example.com", "status": "active", "source": "api", "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-01T00:00:00Z"}
+                    ],
+                    "pagination": {"page": 1, "limit": 10, "total": 1, "totalPages": 1, "hasNext": false, "hasPrev": false}
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = MailBreeze::builder("test_api_key")
+            .base_url(mock_server.uri())
+            .build()
+            .unwrap();
+
+        let contacts = client.contacts("list_123");
+        let result = contacts.list(&ListContactsParams::default()).await.unwrap();
+        assert_eq!(result.contacts.len(), 1);
     }
 }

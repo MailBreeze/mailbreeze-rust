@@ -1,10 +1,25 @@
 use crate::error::{Error, Result};
 use reqwest::{Client, Method, Response, StatusCode};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-const DEFAULT_BASE_URL: &str = "https://api.mailbreeze.com/v1";
+/// API response wrapper - all responses from the API are wrapped in this structure
+#[derive(Debug, Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    data: Option<T>,
+    error: Option<ApiErrorBody>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiErrorBody {
+    code: Option<String>,
+    message: Option<String>,
+}
+
+const DEFAULT_BASE_URL: &str = "https://api.mailbreeze.com";
+const API_VERSION: &str = "/api/v1";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MAX_RETRIES: u32 = 3;
 
@@ -116,9 +131,27 @@ impl HttpClient {
             .await
     }
 
+    /// Perform a PUT request
+    pub async fn put<T, B>(&self, path: &str, body: &B) -> Result<T>
+    where
+        T: DeserializeOwned,
+        B: Serialize,
+    {
+        let body_value = serde_json::to_value(body)?;
+        self.request_impl(Method::PUT, path, Some(&body_value), None)
+            .await
+    }
+
     /// Perform a DELETE request
     pub async fn delete(&self, path: &str) -> Result<()> {
-        self.request_no_response(Method::DELETE, path).await
+        self.request_no_response(Method::DELETE, path, None).await
+    }
+
+    /// Perform a POST request with body but expecting no response body (204 No Content)
+    pub async fn post_no_response<B: Serialize>(&self, path: &str, body: &B) -> Result<()> {
+        let body_value = serde_json::to_value(body)?;
+        self.request_no_response(Method::POST, path, Some(&body_value))
+            .await
     }
 
     /// Internal request implementation
@@ -129,7 +162,7 @@ impl HttpClient {
         body: Option<&serde_json::Value>,
         query: Option<&serde_json::Value>,
     ) -> Result<T> {
-        let url = format!("{}{}", self.config.base_url, path);
+        let url = format!("{}{}{}", self.config.base_url, API_VERSION, path);
         let mut attempt = 0;
 
         loop {
@@ -137,10 +170,10 @@ impl HttpClient {
 
             let mut request = self.client.request(method.clone(), &url);
             request = request
-                .header("Authorization", format!("Bearer {}", self.config.api_key))
+                .header("X-API-Key", &self.config.api_key)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .header("User-Agent", "mailbreeze-rust/0.1.0");
+                .header("User-Agent", "mailbreeze-rust/0.2.0");
 
             if let Some(b) = body {
                 request = request.json(b);
@@ -181,20 +214,29 @@ impl HttpClient {
     }
 
     /// Perform a request that expects no response body
-    async fn request_no_response(&self, method: Method, path: &str) -> Result<()> {
-        let url = format!("{}{}", self.config.base_url, path);
+    async fn request_no_response(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<()> {
+        let url = format!("{}{}{}", self.config.base_url, API_VERSION, path);
         let mut attempt = 0;
 
         loop {
             attempt += 1;
 
-            let request = self
+            let mut request = self
                 .client
                 .request(method.clone(), &url)
-                .header("Authorization", format!("Bearer {}", self.config.api_key))
+                .header("X-API-Key", &self.config.api_key)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .header("User-Agent", "mailbreeze-rust/0.1.0");
+                .header("User-Agent", "mailbreeze-rust/0.2.0");
+
+            if let Some(b) = body {
+                request = request.json(b);
+            }
 
             let response = match request.send().await {
                 Ok(resp) => resp,
@@ -233,7 +275,31 @@ impl HttpClient {
                     "Empty response body",
                 ))));
             }
-            serde_json::from_str(&text).map_err(Error::Json)
+
+            // Parse the API response wrapper
+            let api_response: ApiResponse<T> = serde_json::from_str(&text).map_err(Error::Json)?;
+
+            // Check if the API returned success: false
+            if !api_response.success {
+                let error_body = api_response.error.unwrap_or(ApiErrorBody {
+                    code: None,
+                    message: Some("Unknown error".to_string()),
+                });
+                return Err(Error::BadRequest {
+                    message: error_body
+                        .message
+                        .unwrap_or_else(|| "Unknown error".to_string()),
+                    code: error_body.code,
+                });
+            }
+
+            // Extract the data field
+            api_response.data.ok_or_else(|| {
+                Error::Json(serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Response missing data field",
+                )))
+            })
         } else {
             Err(self.parse_error_response(response).await?)
         }
@@ -333,11 +399,14 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/test"))
-            .and(header("Authorization", "Bearer test_key"))
+            .and(path("/api/v1/test"))
+            .and(header("X-API-Key", "test_key"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "123",
-                "name": "Test"
+                "success": true,
+                "data": {
+                    "id": "123",
+                    "name": "Test"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -355,9 +424,12 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/test"))
+            .and(path("/api/v1/test"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "id": "456"
+                "success": true,
+                "data": {
+                    "id": "456"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -375,7 +447,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("DELETE"))
-            .and(path("/test/123"))
+            .and(path("/api/v1/test/123"))
             .respond_with(ResponseTemplate::new(204))
             .mount(&mock_server)
             .await;
@@ -391,7 +463,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/test"))
+            .and(path("/api/v1/test"))
             .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
                 "error": "Invalid API key"
             })))
@@ -410,7 +482,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/test/nonexistent"))
+            .and(path("/api/v1/test/nonexistent"))
             .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
                 "error": "Not found"
             })))
@@ -430,7 +502,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/test"))
+            .and(path("/api/v1/test"))
             .respond_with(ResponseTemplate::new(422).set_body_json(serde_json::json!({
                 "error": "Validation failed",
                 "errors": {
@@ -459,7 +531,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/test"))
+            .and(path("/api/v1/test"))
             .respond_with(
                 ResponseTemplate::new(429)
                     .insert_header("Retry-After", "30")
@@ -490,7 +562,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/test"))
+            .and(path("/api/v1/test"))
             .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
                 "error": "Server error"
             })))

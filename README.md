@@ -35,7 +35,7 @@ use mailbreeze::{MailBreeze, SendEmailParams};
 async fn main() -> mailbreeze::Result<()> {
     let client = MailBreeze::new("your_api_key")?;
 
-    let email = client.emails.send(&SendEmailParams {
+    let result = client.emails.send(&SendEmailParams {
         from: "sender@yourdomain.com".to_string(),
         to: vec!["recipient@example.com".to_string()],
         subject: Some("Hello from MailBreeze!".to_string()),
@@ -43,7 +43,7 @@ async fn main() -> mailbreeze::Result<()> {
         ..Default::default()
     }).await?;
 
-    println!("Email sent with ID: {}", email.id);
+    println!("Email sent with message ID: {}", result.message_id);
     Ok(())
 }
 ```
@@ -69,19 +69,23 @@ let client = MailBreeze::builder("your_api_key")
 
 ```rust
 // Send an email
-let email = client.emails.send(&SendEmailParams {
+let result = client.emails.send(&SendEmailParams {
     from: "sender@example.com".to_string(),
     to: vec!["recipient@example.com".to_string()],
     subject: Some("Hello".to_string()),
     html: Some("<p>Hello World</p>".to_string()),
     ..Default::default()
 }).await?;
+println!("Sent with ID: {}", result.message_id);
 
 // Get email by ID
 let email = client.emails.get("email_id").await?;
 
 // List emails
-let emails = client.emails.list(&ListEmailsParams::default()).await?;
+let email_list = client.emails.list(&ListEmailsParams::default()).await?;
+for email in email_list.emails {
+    println!("Email: {} - {}", email.id, email.status);
+}
 
 // Get statistics
 let stats = client.emails.stats().await?;
@@ -89,9 +93,14 @@ let stats = client.emails.stats().await?;
 
 ### Contacts
 
+Contacts are managed within a specific list:
+
 ```rust
+// Get contacts resource for a list
+let contacts = client.contacts("list_id");
+
 // Create a contact
-let contact = client.contacts.create(&CreateContactParams {
+let contact = contacts.create(&CreateContactParams {
     email: "user@example.com".to_string(),
     first_name: Some("John".to_string()),
     last_name: Some("Doe".to_string()),
@@ -99,16 +108,22 @@ let contact = client.contacts.create(&CreateContactParams {
 }).await?;
 
 // Update a contact
-let contact = client.contacts.update("contact_id", &UpdateContactParams {
+let contact = contacts.update("contact_id", &UpdateContactParams {
     first_name: Some("Jane".to_string()),
     ..Default::default()
 }).await?;
 
 // List contacts
-let contacts = client.contacts.list(&ListContactsParams::default()).await?;
+let contact_list = contacts.list(&ListContactsParams::default()).await?;
+for contact in contact_list.contacts {
+    println!("Contact: {} - {}", contact.email, contact.status);
+}
 
-// Unsubscribe
-let result = client.contacts.unsubscribe("contact_id").await?;
+// Suppress a contact (prevent receiving emails)
+contacts.suppress("contact_id", "manual").await?;
+
+// Delete a contact
+contacts.delete("contact_id").await?;
 ```
 
 ### Lists
@@ -120,11 +135,27 @@ let list = client.lists.create(&CreateListParams {
     description: Some("Weekly newsletter subscribers".to_string()),
 }).await?;
 
-// Add contact to list
-client.lists.add_contact("list_id", "contact_id").await?;
+// List all lists
+let all_lists = client.lists.list(&ListListsParams::default()).await?;
+for list in all_lists.lists {
+    println!("List: {} ({} contacts)", list.name, list.total_contacts);
+}
+
+// Get a specific list
+let list = client.lists.get("list_id").await?;
+
+// Update a list
+let list = client.lists.update("list_id", &UpdateListParams {
+    name: Some("Updated Name".to_string()),
+    ..Default::default()
+}).await?;
 
 // Get list statistics
 let stats = client.lists.stats("list_id").await?;
+println!("Active: {}, Suppressed: {}", stats.active_contacts, stats.suppressed_contacts);
+
+// Delete a list
+client.lists.delete("list_id").await?;
 ```
 
 ### Email Verification
@@ -137,30 +168,72 @@ if result.is_valid {
     println!("Email is valid!");
 }
 
-// Batch verification
+// Batch verification (returns immediate results or verification_id for polling)
 let batch = client.verification.batch(vec![
     "email1@example.com".to_string(),
     "email2@example.com".to_string(),
 ]).await?;
 
-// Get verification status
-let status = client.verification.get("verification_id").await?;
+// Results are categorized as clean, dirty, or unknown
+if let Some(results) = batch.results {
+    println!("Clean: {:?}", results.clean);
+    println!("Dirty: {:?}", results.dirty);
+    println!("Unknown: {:?}", results.unknown);
+}
+
+// Get verification status (for async batches with verification_id)
+if !batch.verification_id.is_empty() {
+    let status = client.verification.get(&batch.verification_id).await?;
+}
+
+// List all verification batches
+let batches = client.verification.list().await?;
+for batch in batches {
+    println!("Batch {}: {} emails, status: {}", batch.id, batch.total_emails, batch.status);
+}
 
 // Get verification stats
 let stats = client.verification.stats().await?;
+println!("Valid: {}%", stats.valid_percentage);
 ```
 
 ### Attachments
 
 ```rust
-// Create upload URL
+// Step 1: Create upload URL
 let upload = client.attachments.create_upload_url(&CreateUploadParams {
     filename: "document.pdf".to_string(),
     content_type: "application/pdf".to_string(),
     size: 1024000,
 }).await?;
 
-// Use upload_url to upload file, then reference attachment_id in emails
+// Step 2: Upload file to the presigned URL (using reqwest or similar)
+// reqwest::Client::new()
+//     .put(&upload.upload_url)
+//     .body(file_bytes)
+//     .header("Content-Type", "application/pdf")
+//     .send()
+//     .await?;
+
+// Step 3: Confirm the upload
+client.attachments.confirm(&upload.attachment_id).await?;
+
+// Step 4: Use in email
+let result = client.emails.send(&SendEmailParams {
+    from: "sender@example.com".to_string(),
+    to: vec!["recipient@example.com".to_string()],
+    subject: Some("Your Report".to_string()),
+    html: Some("<p>Please find your report attached.</p>".to_string()),
+    attachment_ids: Some(vec![upload.attachment_id]),
+    ..Default::default()
+}).await?;
+
+// Get attachment details
+let attachment = client.attachments.get("attachment_id").await?;
+println!("Status: {}", attachment.status);
+
+// Delete an attachment
+client.attachments.delete("attachment_id").await?;
 ```
 
 ## Error Handling

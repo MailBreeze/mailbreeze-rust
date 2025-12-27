@@ -2,7 +2,7 @@ use crate::client::HttpClient;
 use crate::error::Result;
 use crate::types::{
     CancelEmailResult, Email, EmailList, EmailStats, EmailStatsResponse, ListEmailsParams,
-    SendEmailParams,
+    SendEmailParams, SendEmailResult,
 };
 
 /// Emails API resource
@@ -17,7 +17,9 @@ impl Emails {
     }
 
     /// Send an email
-    pub async fn send(&self, params: &SendEmailParams) -> Result<Email> {
+    ///
+    /// Returns the message ID of the sent email.
+    pub async fn send(&self, params: &SendEmailParams) -> Result<SendEmailResult> {
         self.client.post("/emails", params).await
     }
 
@@ -65,14 +67,12 @@ mod tests {
         let (mock_server, emails) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/emails"))
+            .and(path("/api/v1/emails"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "id": "email_123",
-                "from": "sender@example.com",
-                "to": ["recipient@example.com"],
-                "subject": "Hello",
-                "status": "queued",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "messageId": "msg_123abc"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -85,9 +85,8 @@ mod tests {
             ..Default::default()
         };
 
-        let email = emails.send(&params).await.unwrap();
-        assert_eq!(email.id, "email_123");
-        assert_eq!(email.status, crate::types::EmailStatus::Queued);
+        let result = emails.send(&params).await.unwrap();
+        assert_eq!(result.message_id, "msg_123abc");
     }
 
     #[tokio::test]
@@ -95,14 +94,18 @@ mod tests {
         let (mock_server, emails) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/emails/email_123"))
+            .and(path("/api/v1/emails/email_123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "email_123",
-                "from": "sender@example.com",
-                "to": ["recipient@example.com"],
-                "status": "delivered",
-                "created_at": "2024-01-01T00:00:00Z",
-                "delivered_at": "2024-01-01T00:01:00Z"
+                "success": true,
+                "data": {
+                    "_id": "email_123",
+                    "messageId": "email_123",
+                    "from": "sender@example.com",
+                    "to": ["recipient@example.com"],
+                    "status": "delivered",
+                    "createdAt": "2024-01-01T00:00:00Z",
+                    "deliveredAt": "2024-01-01T00:01:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -117,20 +120,23 @@ mod tests {
         let (mock_server, emails) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/emails"))
+            .and(path("/api/v1/emails"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "items": [
-                    {"id": "email_1", "from": "a@example.com", "to": ["b@example.com"], "status": "sent", "created_at": "2024-01-01T00:00:00Z"},
-                    {"id": "email_2", "from": "a@example.com", "to": ["c@example.com"], "status": "delivered", "created_at": "2024-01-01T00:00:00Z"}
-                ],
-                "meta": {"page": 1, "limit": 10, "total": 2, "total_pages": 1}
+                "success": true,
+                "data": {
+                    "emails": [
+                        {"_id": "email_1", "from": "a@example.com", "to": ["b@example.com"], "status": "sent", "createdAt": "2024-01-01T00:00:00Z"},
+                        {"_id": "email_2", "from": "a@example.com", "to": ["c@example.com"], "status": "delivered", "createdAt": "2024-01-01T00:00:00Z"}
+                    ],
+                    "pagination": {"page": 1, "limit": 10, "total": 2, "totalPages": 1, "hasNext": false, "hasPrev": false}
+                }
             })))
             .mount(&mock_server)
             .await;
 
         let result = emails.list(&ListEmailsParams::default()).await.unwrap();
-        assert_eq!(result.items.len(), 2);
-        assert_eq!(result.meta.total, 2);
+        assert_eq!(result.emails.len(), 2);
+        assert_eq!(result.pagination.total, 2);
     }
 
     #[tokio::test]
@@ -138,15 +144,18 @@ mod tests {
         let (mock_server, emails) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/emails/stats"))
+            .and(path("/api/v1/emails/stats"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "stats": {
-                    "total": 1000,
-                    "sent": 950,
-                    "failed": 50,
-                    "transactional": 600,
-                    "marketing": 400,
-                    "successRate": 95.0
+                "success": true,
+                "data": {
+                    "stats": {
+                        "total": 1000,
+                        "sent": 950,
+                        "failed": 50,
+                        "transactional": 600,
+                        "marketing": 400,
+                        "successRate": 95.0
+                    }
                 }
             })))
             .mount(&mock_server)
@@ -162,10 +171,13 @@ mod tests {
         let (mock_server, emails) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/emails/email_123/cancel"))
+            .and(path("/api/v1/emails/email_123/cancel"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "email_123",
-                "cancelled": true
+                "success": true,
+                "data": {
+                    "id": "email_123",
+                    "cancelled": true
+                }
             })))
             .mount(&mock_server)
             .await;

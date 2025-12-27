@@ -15,7 +15,20 @@ impl Attachments {
 
     /// Create a pre-signed upload URL
     pub async fn create_upload_url(&self, params: &CreateUploadParams) -> Result<UploadUrl> {
-        self.client.post("/attachments/upload", params).await
+        self.client.post("/attachments/presigned-url", params).await
+    }
+
+    /// Confirm that an attachment has been uploaded
+    ///
+    /// Must be called after uploading the file to the presigned URL.
+    /// The attachment is only available for use after confirmation.
+    pub async fn confirm(&self, attachment_id: &str) -> Result<()> {
+        self.client
+            .post_no_response(
+                &format!("/attachments/{}/confirm", attachment_id),
+                &serde_json::json!({}),
+            )
+            .await
     }
 
     /// Get an attachment by ID
@@ -49,11 +62,14 @@ mod tests {
         let (mock_server, attachments) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/attachments/upload"))
+            .and(path("/api/v1/attachments/presigned-url"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "attachment_id": "attach_123",
-                "upload_url": "https://storage.example.com/upload/abc123",
-                "expires_at": "2024-01-01T01:00:00Z"
+                "success": true,
+                "data": {
+                    "attachmentId": "attach_123",
+                    "uploadUrl": "https://storage.example.com/upload/abc123",
+                    "expiresAt": "2024-01-01T01:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -74,14 +90,17 @@ mod tests {
         let (mock_server, attachments) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/attachments/attach_123"))
+            .and(path("/api/v1/attachments/attach_123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "attach_123",
-                "filename": "document.pdf",
-                "content_type": "application/pdf",
-                "size": 1024000,
-                "status": "ready",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "id": "attach_123",
+                    "filename": "document.pdf",
+                    "contentType": "application/pdf",
+                    "size": 1024000,
+                    "status": "ready",
+                    "createdAt": "2024-01-01T00:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -97,7 +116,7 @@ mod tests {
         let (mock_server, attachments) = setup().await;
 
         Mock::given(method("DELETE"))
-            .and(path("/attachments/attach_123"))
+            .and(path("/api/v1/attachments/attach_123"))
             .respond_with(ResponseTemplate::new(204))
             .mount(&mock_server)
             .await;
@@ -110,11 +129,14 @@ mod tests {
         let (mock_server, attachments) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/attachments/upload"))
+            .and(path("/api/v1/attachments/presigned-url"))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
-                "attachment_id": "attach_456",
-                "upload_url": "https://storage.example.com/upload/xyz789",
-                "expires_at": "2024-01-01T01:00:00Z"
+                "success": true,
+                "data": {
+                    "attachmentId": "attach_456",
+                    "uploadUrl": "https://storage.example.com/upload/xyz789",
+                    "expiresAt": "2024-01-01T01:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
@@ -134,14 +156,17 @@ mod tests {
         let (mock_server, attachments) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/attachments/attach_789"))
+            .and(path("/api/v1/attachments/attach_789"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "attach_789",
-                "filename": "video.mp4",
-                "content_type": "video/mp4",
-                "size": 10000000,
-                "status": "pending",
-                "created_at": "2024-01-01T00:00:00Z"
+                "success": true,
+                "data": {
+                    "id": "attach_789",
+                    "filename": "video.mp4",
+                    "contentType": "video/mp4",
+                    "size": 10000000,
+                    "status": "pending",
+                    "createdAt": "2024-01-01T00:00:00Z"
+                }
             })))
             .mount(&mock_server)
             .await;
