@@ -1,7 +1,8 @@
 use crate::client::HttpClient;
 use crate::error::Result;
 use crate::types::{
-    CancelEmailResult, Email, EmailList, EmailStats, EmailStatsResponse, ListEmailsParams, SendEmailParams,
+    CancelEmailResult, Email, EmailList, EmailStats, EmailStatsResponse, ListEmailsParams,
+    SendEmailParams,
 };
 
 /// Emails API resource
