@@ -1,7 +1,7 @@
 use crate::client::HttpClient;
 use crate::error::Result;
 use crate::types::{
-    CancelEmailResult, Email, EmailList, EmailStats, ListEmailsParams, SendEmailParams,
+    CancelEmailResult, Email, EmailList, EmailStats, EmailStatsResponse, ListEmailsParams, SendEmailParams,
 };
 
 /// Emails API resource
@@ -32,7 +32,8 @@ impl Emails {
 
     /// Get email statistics
     pub async fn stats(&self) -> Result<EmailStats> {
-        self.client.get("/emails/stats").await
+        let response: EmailStatsResponse = self.client.get("/emails/stats").await?;
+        Ok(response.stats)
     }
 
     /// Cancel a pending email
@@ -138,20 +139,21 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/emails/stats"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "sent": 1000,
-                "delivered": 950,
-                "bounced": 30,
-                "complained": 5,
-                "opened": 400,
-                "clicked": 100,
-                "unsubscribed": 15
+                "stats": {
+                    "total": 1000,
+                    "sent": 950,
+                    "failed": 50,
+                    "transactional": 600,
+                    "marketing": 400,
+                    "successRate": 95.0
+                }
             })))
             .mount(&mock_server)
             .await;
 
         let stats = emails.stats().await.unwrap();
-        assert_eq!(stats.sent, 1000);
-        assert_eq!(stats.delivered, 950);
+        assert_eq!(stats.total, 1000);
+        assert_eq!(stats.sent, 950);
     }
 
     #[tokio::test]

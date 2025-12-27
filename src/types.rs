@@ -89,13 +89,19 @@ pub struct EmailList {
 /// Email statistics
 #[derive(Debug, Clone, Deserialize)]
 pub struct EmailStats {
+    pub total: i64,
     pub sent: i64,
-    pub delivered: i64,
-    pub bounced: i64,
-    pub complained: i64,
-    pub opened: i64,
-    pub clicked: i64,
-    pub unsubscribed: i64,
+    pub failed: i64,
+    pub transactional: i64,
+    pub marketing: i64,
+    #[serde(rename = "successRate")]
+    pub success_rate: f64,
+}
+
+/// Wrapper for email stats response from API
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmailStatsResponse {
+    pub stats: EmailStats,
 }
 
 /// Contact subscription status
@@ -315,74 +321,18 @@ pub struct BatchVerificationResult {
 /// Verification statistics
 #[derive(Debug, Clone, Deserialize)]
 pub struct VerificationStats {
+    #[serde(rename = "totalVerified")]
     pub total_verified: i64,
-    pub valid_count: i64,
-    pub invalid_count: i64,
-    pub risky_count: i64,
-    pub unknown_count: i64,
-}
-
-/// Enrollment status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum EnrollmentStatus {
-    Active,
-    Completed,
-    Cancelled,
-    Failed,
-}
-
-/// Automation enrollment
-#[derive(Debug, Clone, Deserialize)]
-pub struct Enrollment {
-    pub id: String,
-    pub automation_id: String,
-    pub contact_id: String,
-    pub status: EnrollmentStatus,
-    pub current_step: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub variables: Option<HashMap<String, serde_json::Value>>,
-    pub created_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
-}
-
-/// Parameters for enrolling a contact
-#[derive(Debug, Clone, Serialize)]
-pub struct EnrollParams {
-    pub automation_id: String,
-    pub contact_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub variables: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// Parameters for listing enrollments
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct ListEnrollmentsParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub automation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<EnrollmentStatus>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub page: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<i32>,
-}
-
-/// Paginated list of enrollments
-#[derive(Debug, Clone, Deserialize)]
-pub struct EnrollmentList {
-    pub items: Vec<Enrollment>,
-    pub meta: PaginationMeta,
-}
-
-/// Cancel enrollment result
-#[derive(Debug, Clone, Deserialize)]
-pub struct CancelEnrollmentResult {
-    pub id: String,
-    pub cancelled: bool,
+    #[serde(rename = "totalValid")]
+    pub total_valid: i64,
+    #[serde(rename = "totalInvalid")]
+    pub total_invalid: i64,
+    #[serde(rename = "totalUnknown")]
+    pub total_unknown: i64,
+    #[serde(rename = "totalVerifications")]
+    pub total_verifications: i64,
+    #[serde(rename = "validPercentage")]
+    pub valid_percentage: f64,
 }
 
 /// Upload URL response

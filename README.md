@@ -12,7 +12,6 @@ Official Rust SDK for [MailBreeze](https://mailbreeze.com) - Email Marketing & T
 - 👥 **Contact Management** - Create, update, and organize contacts
 - 📋 **List Management** - Mailing lists with statistics
 - ✅ **Email Verification** - Single and batch verification
-- 🤖 **Automations** - Enroll contacts in automation workflows
 - 📎 **Attachments** - Upload and manage email attachments
 - 🔄 **Automatic Retries** - Exponential backoff for transient errors
 - 🔒 **Secure** - API key redacted from debug output
@@ -139,24 +138,16 @@ if result.is_valid {
 }
 
 // Batch verification
-let batch = client.verification.verify_batch(vec![
+let batch = client.verification.batch(vec![
     "email1@example.com".to_string(),
     "email2@example.com".to_string(),
 ]).await?;
-```
 
-### Automations
+// Get verification status
+let status = client.verification.get("verification_id").await?;
 
-```rust
-// Enroll contact in automation
-let enrollment = client.automations.enroll(&EnrollParams {
-    automation_id: "auto_123".to_string(),
-    contact_id: "contact_456".to_string(),
-    variables: None,
-}).await?;
-
-// Cancel enrollment
-client.automations.cancel_enrollment("enrollment_id").await?;
+// Get verification stats
+let stats = client.verification.stats().await?;
 ```
 
 ### Attachments

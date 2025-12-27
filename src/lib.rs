@@ -31,7 +31,7 @@ mod types;
 
 pub use client::{ClientConfig, HttpClient};
 pub use error::{Error, Result};
-pub use resources::{Attachments, Automations, Contacts, Emails, Lists, Verification};
+pub use resources::{Attachments, Contacts, Emails, Lists, Verification};
 pub use types::*;
 
 use std::time::Duration;
@@ -47,8 +47,6 @@ pub struct MailBreeze {
     pub lists: Lists,
     /// Verification API resource
     pub verification: Verification,
-    /// Automations API resource
-    pub automations: Automations,
     /// Attachments API resource
     pub attachments: Attachments,
 }
@@ -68,7 +66,6 @@ impl MailBreeze {
             contacts: Contacts::new(http_client.clone()),
             lists: Lists::new(http_client.clone()),
             verification: Verification::new(http_client.clone()),
-            automations: Automations::new(http_client.clone()),
             attachments: Attachments::new(http_client),
         })
     }

@@ -28,7 +28,7 @@ impl Verification {
     pub async fn verify(&self, email: &str) -> Result<VerificationResult> {
         self.client
             .post(
-                "/verification/verify",
+                "/email-verification/single",
                 &VerifyRequest {
                     email: email.to_string(),
                 },
@@ -37,22 +37,22 @@ impl Verification {
     }
 
     /// Verify multiple email addresses in batch
-    pub async fn verify_batch(&self, emails: Vec<String>) -> Result<BatchVerificationResult> {
+    pub async fn batch(&self, emails: Vec<String>) -> Result<BatchVerificationResult> {
         self.client
-            .post("/verification/batch", &BatchVerifyRequest { emails })
+            .post("/email-verification/batch", &BatchVerifyRequest { emails })
             .await
     }
 
     /// Get batch verification status
-    pub async fn get_batch_status(&self, verification_id: &str) -> Result<BatchVerificationResult> {
+    pub async fn get(&self, verification_id: &str) -> Result<BatchVerificationResult> {
         self.client
-            .get(&format!("/verification/batch/{}", verification_id))
+            .get(&format!("/email-verification/{}", verification_id))
             .await
     }
 
     /// Get verification statistics
     pub async fn stats(&self) -> Result<VerificationStats> {
-        self.client.get("/verification/stats").await
+        self.client.get("/email-verification/stats").await
     }
 }
 
@@ -77,7 +77,7 @@ mod tests {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/verification/verify"))
+            .and(path("/email-verification/single"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "email": "valid@example.com",
                 "status": "valid",
@@ -102,7 +102,7 @@ mod tests {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/verification/verify"))
+            .and(path("/email-verification/single"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "email": "invalid@nonexistent.domain",
                 "status": "invalid",
@@ -128,7 +128,7 @@ mod tests {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/verification/verify"))
+            .and(path("/email-verification/single"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "email": "user@gmial.com",
                 "status": "invalid",
@@ -147,11 +147,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verify_batch() {
+    async fn test_batch() {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("POST"))
-            .and(path("/verification/batch"))
+            .and(path("/email-verification/batch"))
             .respond_with(ResponseTemplate::new(202).set_body_json(serde_json::json!({
                 "verification_id": "batch_123",
                 "status": "processing",
@@ -168,18 +168,18 @@ mod tests {
             "email3@example.com".to_string(),
         ];
 
-        let result = verification.verify_batch(emails).await.unwrap();
+        let result = verification.batch(emails).await.unwrap();
         assert_eq!(result.verification_id, "batch_123");
         assert_eq!(result.status, "processing");
         assert_eq!(result.total, 3);
     }
 
     #[tokio::test]
-    async fn test_get_batch_status() {
+    async fn test_get() {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/verification/batch/batch_123"))
+            .and(path("/email-verification/batch_123"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "verification_id": "batch_123",
                 "status": "completed",
@@ -196,7 +196,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = verification.get_batch_status("batch_123").await.unwrap();
+        let result = verification.get("batch_123").await.unwrap();
         assert_eq!(result.status, "completed");
         assert_eq!(result.processed, 3);
         assert!(result.results.is_some());
@@ -208,19 +208,20 @@ mod tests {
         let (mock_server, verification) = setup().await;
 
         Mock::given(method("GET"))
-            .and(path("/verification/stats"))
+            .and(path("/email-verification/stats"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "total_verified": 10000,
-                "valid_count": 8500,
-                "invalid_count": 1000,
-                "risky_count": 400,
-                "unknown_count": 100
+                "totalVerified": 10000,
+                "totalValid": 8500,
+                "totalInvalid": 1000,
+                "totalUnknown": 100,
+                "totalVerifications": 10000,
+                "validPercentage": 85.0
             })))
             .mount(&mock_server)
             .await;
 
         let stats = verification.stats().await.unwrap();
         assert_eq!(stats.total_verified, 10000);
-        assert_eq!(stats.valid_count, 8500);
+        assert_eq!(stats.total_valid, 8500);
     }
 }
